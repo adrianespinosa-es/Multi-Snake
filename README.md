@@ -1,29 +1,40 @@
 # Mult Snake
 
-Snake 2 vs 2 para 4 jugadores en la misma pantalla (PC y móvil). Godot 4.3+ (GDScript).
+Snake 2 vs 2 para 4 jugadores (PC y móvil). Godot 4.3+ (GDScript).
 
-## Cómo abrirlo
-1. Abre Godot 4.3 o superior -> Importar -> selecciona `project.godot`.
-2. Pulsa F5 para jugar.
+## Flujo
+1. **Pantalla inicial**: nombre del juego + login con tu nombre (se recuerda para la próxima vez).
+2. **Menú principal**: Jugar online / Jugar offline (vs IA) / Cambiar nombre / Salir.
+3. **Offline**: eliges color; tú + 1 IA contra 2 IA. Las IA usan colores distintos.
+4. **Online**: uno crea la partida (anfitrión) y los otros 3 se unen con su IP. En la sala cada
+   jugador elige color; los colores ocupados quedan deshabilitados (no se pueden repetir).
+   El anfitrión pulsa "Empezar" (los huecos libres los ocupa la IA).
 
-## Reglas
-- Partida de 2:00. Fase 1 (0:00-1:00): puntos de +1 cubo. Fase 2 (1:00-1:30): 1/5 de los puntos dan +2.
-- Fase 3 (1:30-fin): aparecen cubos pared (matan), y cubos de velocidad -1/4 / +1/4 (1/5 de probabilidad).
+## Equipos
+- Equipo 1 = huecos 1 y 2 (marcados con un cuadrado en la cabeza).
+- Equipo 2 = huecos 3 y 4 (marcados con un aro en la cabeza).
+- Gana el equipo con la suma de puntos más alta.
+
+## Reglas de la partida (2:00)
+- 0:00-1:00 puntos +1. 1:00-1:30: 1/5 de los puntos dan +2.
+- 1:30-fin: aparecen cubos pared (matan) y cubos de velocidad -1/4 / +1/4 (1/5 de probabilidad).
 - Chocar con borde, pared, cuerpo propio o ajeno = eliminado; reapareces a los 5 s en una zona libre.
-- Equipos: AZUL = J1+J2, ROJO = J3+J4. Gana la suma de puntos más alta.
 
 ## Controles
-- PC: J1 WASD, J2 TFGH, J3 IJKL, J4 flechas. Espacio/Enter para empezar.
-- Móvil: desliza el dedo dentro de tu cuadrante (J1 arriba-izq, J2 abajo-izq, J3 arriba-der, J4 abajo-der).
+- PC: flechas o WASD. Esc = salir al menú.
+- Móvil: desliza el dedo por cualquier parte de la pantalla.
 
-## Parámetros fáciles de tocar (arriba de `main.gd`)
-`GAME_TIME`, `PHASE2_AT`, `PHASE3_AT`, `BASE_STEP`, `SPEED_FACTOR`, `RESPAWN_TIME`, `MAX_WALLS`, `COLS/ROWS`.
+## Red (online)
+- Puerto UDP 24567. En la misma WiFi/red local basta con la IP que muestra la sala del anfitrión.
+- Por Internet el anfitrión debe abrir/redirigir el puerto UDP 24567 en su router.
+- El anfitrión ejecuta la partida; si un jugador se desconecta, su serpiente pasa a la IA.
 
-## Exportar
-Proyecto -> Exportar... -> añade preset Android (necesita Android SDK) o Windows/Linux/Mac/Web.
+## Archivos
+- `session.gd` (autoload): perfil, sala, colores únicos y red.
+- `main.gd`: pantallas (login, menú, offline, online, sala).
+- `game.gd`: partida, IA y dibujo.
 
-## Git: recuperar versiones
-    git log --oneline            # ver versiones
-    git checkout <hash> -- .     # volver a esa versión
-    git checkout v0.1 -- .       # volver a la etiqueta v0.1
-    git commit -am "mensaje"     # guardar nueva versión
+## Git
+    git log --oneline
+    git checkout v0.1 -- .
+    git add -A && git commit -m "mensaje"
