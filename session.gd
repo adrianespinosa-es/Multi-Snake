@@ -10,6 +10,7 @@ signal connection_lost(reason: String)
 const PORT := 24567
 const NAME_MAX := 12
 const PROFILE_PATH := "user://profile.cfg"
+const AVATAR_COUNT := 10
 
 var palette: Array = [
 	Color(0.16, 0.45, 0.95), Color(0.05, 0.68, 0.62), Color(0.25, 0.75, 0.30), Color(0.98, 0.80, 0.10),
@@ -20,10 +21,12 @@ var palette_names: Array = ["Azul", "Turquesa", "Verde", "Amarillo", "Naranja", 
 var player_name := ""
 var my_color := 0
 var last_ip := ""
+var avatar := 0
+var _avatar_cache := {}
 var online := false
 var is_host := false
 var in_match := false
-# Cada hueco: {"name": String, "color": int, "peer": int}
+# Cada hueco: {"name": String, "color": int, "peer": int, "avatar": int}
 # peer: -1 = vacio, 0 = IA, >=1 = jugador humano (el anfitrion es 1)
 var slots: Array = []
 var my_slot := 0
@@ -47,6 +50,7 @@ func _load_profile() -> void:
 		player_name = str(cf.get_value("profile", "name", ""))
 		my_color = int(cf.get_value("profile", "color", 0)) % palette.size()
 		last_ip = str(cf.get_value("profile", "ip", ""))
+		avatar = clampi(int(cf.get_value("profile", "avatar", 0)), 0, AVATAR_COUNT - 1)
 
 
 func save_profile() -> void:
@@ -54,12 +58,13 @@ func save_profile() -> void:
 	cf.set_value("profile", "name", player_name)
 	cf.set_value("profile", "color", my_color)
 	cf.set_value("profile", "ip", last_ip)
+	cf.set_value("profile", "avatar", avatar)
 	cf.save(PROFILE_PATH)
 
 
 # ---------------------------------------------------------------- huecos y colores
 func _empty_slot() -> Dictionary:
-	return {"name": "", "color": -1, "peer": -1}
+	return {"name": "", "color": -1, "peer": -1, "avatar": 0}
 
 
 func reset_slots() -> void:
@@ -111,8 +116,16 @@ func _fill_ai() -> void:
 	var n := 1
 	for i in slots.size():
 		if int(slots[i]["peer"]) == -1:
-			slots[i] = {"name": "IA %d" % n, "color": random_free_color(i), "peer": 0}
+			slots[i] = {"name": "IA %d" % n, "color": random_free_color(i), "peer": 0, "avatar": randi() % AVATAR_COUNT}
 			n += 1
+
+
+func avatar_texture(i: int) -> Texture2D:
+	i = clampi(i, 0, AVATAR_COUNT - 1)
+	if not _avatar_cache.has(i):
+		var path := "res://avatars/avatar_%02d.png" % (i + 1)
+		_avatar_cache[i] = load(path) if ResourceLoader.exists(path) else null
+	return _avatar_cache[i]
 
 
 func local_ips() -> Array:
@@ -130,7 +143,7 @@ func start_offline() -> void:
 	online = false
 	is_host = true
 	reset_slots()
-	slots[0] = {"name": player_name, "color": my_color, "peer": 1}
+	slots[0] = {"name": player_name, "color": my_color, "peer": 1, "avatar": avatar}
 	my_slot = 0
 	_fill_ai()
 	in_match = true
@@ -149,7 +162,7 @@ func host_game() -> int:
 	is_host = true
 	in_match = false
 	reset_slots()
-	slots[0] = {"name": player_name, "color": my_color, "peer": 1}
+	slots[0] = {"name": player_name, "color": my_color, "peer": 1, "avatar": avatar}
 	my_slot = 0
 	lobby_changed.emit()
 	return OK
@@ -230,7 +243,7 @@ func _on_peer_disconnected(id: int) -> void:
 
 
 func _on_connected_ok() -> void:
-	_srv_hello.rpc_id(1, player_name, my_color)
+	_srv_hello.rpc_id(1, player_name, my_color, avatar)
 
 
 func _on_connect_failed() -> void:
@@ -243,7 +256,7 @@ func _on_server_disconnected() -> void:
 
 # ---------------------------------------------------------------- RPC: cliente -> servidor
 @rpc("any_peer", "call_remote", "reliable")
-func _srv_hello(pname: String, pref: int) -> void:
+func _srv_hello(pname: String, pref: int, av: int) -> void:
 	if not is_host or in_match:
 		return
 	var id := multiplayer.get_remote_sender_id()
@@ -253,7 +266,7 @@ func _srv_hello(pname: String, pref: int) -> void:
 	if i < 0:
 		multiplayer.multiplayer_peer.disconnect_peer(id)
 		return
-	slots[i] = {"name": pname.strip_edges().substr(0, NAME_MAX), "color": free_color(pref, i), "peer": id}
+	slots[i] = {"name": pname.strip_edges().substr(0, NAME_MAX), "color": free_color(pref, i), "peer": id, "avatar": clampi(av, 0, AVATAR_COUNT - 1)}
 	_broadcast_lobby()
 
 
