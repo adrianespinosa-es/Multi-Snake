@@ -12,10 +12,10 @@ const NAME_MAX := 12
 const PROFILE_PATH := "user://profile.cfg"
 
 var palette: Array = [
-	Color(0.29, 0.64, 1.00), Color(0.18, 0.90, 0.84), Color(0.35, 0.85, 0.35), Color(1.00, 0.90, 0.25),
-	Color(1.00, 0.60, 0.20), Color(1.00, 0.30, 0.30), Color(1.00, 0.50, 0.80), Color(0.65, 0.45, 1.00),
+	Color(0.16, 0.45, 0.95), Color(0.05, 0.68, 0.62), Color(0.25, 0.75, 0.30), Color(0.98, 0.80, 0.10),
+	Color(1.00, 0.55, 0.15), Color(0.92, 0.22, 0.25), Color(0.95, 0.40, 0.70), Color(0.55, 0.35, 0.90),
 ]
-var palette_names: Array = ["Azul", "Cian", "Verde", "Amarillo", "Naranja", "Rojo", "Rosa", "Morado"]
+var palette_names: Array = ["Azul", "Turquesa", "Verde", "Amarillo", "Naranja", "Rojo", "Rosa", "Morado"]
 
 var player_name := ""
 var my_color := 0

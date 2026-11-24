@@ -19,6 +19,7 @@ Snake 2 vs 2 para 4 jugadores (PC y móvil). Godot 4.3+ (GDScript).
 - 0:00-1:00 puntos +1. 1:00-1:30: 1/5 de los puntos dan +2.
 - 1:30-fin: aparecen cubos pared (matan) y cubos de velocidad -1/4 / +1/4 (1/5 de probabilidad).
 - Chocar con borde, pared, cuerpo propio o ajeno = eliminado; reapareces a los 5 s en una zona libre.
+- Al morir **pierdes todos tus puntos**, y se restan del total de tu equipo.
 
 ## Controles
 - PC: flechas o WASD. Esc = salir al menú.

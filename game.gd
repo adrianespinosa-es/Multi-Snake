@@ -35,6 +35,11 @@ const KEYMAP := {
 	KEY_D: Vector2i.RIGHT, KEY_RIGHT: Vector2i.RIGHT,
 }
 const DARK := Color(0.08, 0.08, 0.10)
+const NAVY := Color(0.10, 0.16, 0.30)
+const BG_COLOR := Color(0.62, 0.75, 0.90)      # fondo general (azul pastel algo mas intenso)
+const ARENA_COLOR := Color(0.80, 0.90, 0.98)   # tablero (azul pastel)
+const GRID_COLOR := Color(0.72, 0.83, 0.94)
+const BORDER_COLOR := Color(0.35, 0.50, 0.70)
 
 var authoritative := true
 var local_slot := 0
@@ -176,6 +181,8 @@ func _kill(i: int) -> void:
 	var s: Dictionary = snakes[i]
 	s["alive"] = false
 	s["body"] = []
+	s["score"] = 0   # al morir pierde sus puntos (se restan del total del equipo)
+	s["grow"] = 0
 	s["respawn_t"] = RESPAWN_TIME
 
 
@@ -473,7 +480,8 @@ func _text(txt: String, pos: Vector2, size: int, col: Color,
 
 
 func _team_icon(pos: Vector2, team: int) -> void:
-	draw_rect(Rect2(pos, Vector2(24, 24)), Color(0.80, 0.82, 0.86))
+	draw_rect(Rect2(pos, Vector2(24, 24)), Color(0.97, 0.98, 1.0))
+	draw_rect(Rect2(pos, Vector2(24, 24)), NAVY, false, 2.0)
 	var inner := Rect2(pos + Vector2(7, 7), Vector2(10, 10))
 	if team == 0:
 		draw_rect(inner, DARK)
@@ -481,79 +489,131 @@ func _team_icon(pos: Vector2, team: int) -> void:
 		draw_rect(inner, DARK, false, 2.0)
 
 
+func _text_o(txt: String, pos: Vector2, size: int, col: Color, outline_col: Color,
+		align: HorizontalAlignment = HORIZONTAL_ALIGNMENT_LEFT, width: float = -1.0) -> void:
+	var f := ThemeDB.fallback_font
+	draw_string_outline(f, pos, txt, align, width, size, 3, outline_col)
+	draw_string(f, pos, txt, align, width, size, col)
+
+
+func _center(c: Vector2i) -> Vector2:
+	return ORIGIN + Vector2(c) * CELL + Vector2(CELL, CELL) * 0.5
+
+
+## Rectangulo que une dos centros contiguos (ancho 2*r), para que el cuerpo sea continuo.
+func _link(a: Vector2, b: Vector2, r: float, col: Color) -> void:
+	if absf(a.x - b.x) > absf(a.y - b.y):
+		draw_rect(Rect2(Vector2(minf(a.x, b.x), a.y - r), Vector2(absf(a.x - b.x), r * 2.0)), col)
+	else:
+		draw_rect(Rect2(Vector2(a.x - r, minf(a.y, b.y)), Vector2(r * 2.0, absf(a.y - b.y))), col)
+
+
+func _draw_snake(i: int) -> void:
+	var body: Array = snakes[i]["body"]
+	var n := body.size()
+	if n == 0:
+		return
+	var base := _pcolor(i)
+	var light := base.lightened(0.45)     # morro
+	var dark := base.darkened(0.45)       # cola
+	var outline := base.darkened(0.65)
+	var r := CELL * 0.5 - 1.5
+	var cols: Array = []
+	for j in n:
+		cols.append(light.lerp(dark, float(j) / float(maxi(n - 1, 1))))
+	# contorno
+	for j in range(n - 1, -1, -1):
+		var rr := r + 1.0 if j == 0 else r
+		var p := _center(body[j])
+		draw_circle(p, rr + 2.0, outline)
+		if j < n - 1:
+			_link(p, _center(body[j + 1]), r + 2.0, outline)
+	# relleno con degradado
+	for j in range(n - 1, -1, -1):
+		var rr := r + 1.0 if j == 0 else r
+		var p := _center(body[j])
+		if j < n - 1:
+			_link(p, _center(body[j + 1]), r, cols[j].lerp(cols[j + 1], 0.5))
+		draw_circle(p, rr, cols[j])
+	# marca de equipo en la cabeza: cuadrado (equipo 1) o aro (equipo 2)
+	var hc := _center(body[0])
+	var mark := Rect2(hc - Vector2(5, 5), Vector2(10, 10))
+	if (i >> 1) == 0:
+		draw_rect(mark, DARK)
+	else:
+		draw_rect(mark, DARK, false, 2.0)
+	_text_o(str(Session.slots[i]["name"]), hc + Vector2(-40, -16), 13, Color.WHITE, NAVY,
+		HORIZONTAL_ALIGNMENT_CENTER, 80.0)
+	if i == local_slot and (countdown > 0.0 or GAME_TIME - time_left < 4.0):
+		draw_arc(hc, r + 6.0, 0.0, TAU, 32, NAVY, 3.0)
+
+
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, SCREEN), Color(0.06, 0.08, 0.10))
+	draw_rect(Rect2(Vector2.ZERO, SCREEN), BG_COLOR)
 	var arena := Rect2(ORIGIN, Vector2(COLS * CELL, ROWS * CELL))
-	draw_rect(arena, Color(0.09, 0.12, 0.15))
-	draw_rect(arena, Color(0.36, 0.40, 0.45), false, 3.0)
+	draw_rect(arena, ARENA_COLOR)
+	for x in range(1, COLS):
+		var px := ORIGIN.x + x * CELL
+		draw_line(Vector2(px, ORIGIN.y), Vector2(px, ORIGIN.y + ROWS * CELL), GRID_COLOR, 1.0)
+	for y in range(1, ROWS):
+		var py := ORIGIN.y + y * CELL
+		draw_line(Vector2(ORIGIN.x, py), Vector2(ORIGIN.x + COLS * CELL, py), GRID_COLOR, 1.0)
+	draw_rect(arena, BORDER_COLOR, false, 4.0)
 
 	for c in walls.keys():
 		var r := _rect(c, 1.0)
 		draw_rect(r, Color(0.30, 0.16, 0.14))
-		draw_line(r.position, r.end, Color(0.75, 0.40, 0.30), 2.0)
-		draw_line(Vector2(r.end.x, r.position.y), Vector2(r.position.x, r.end.y), Color(0.75, 0.40, 0.30), 2.0)
+		draw_line(r.position, r.end, Color(0.85, 0.50, 0.38), 2.0)
+		draw_line(Vector2(r.end.x, r.position.y), Vector2(r.position.x, r.end.y), Color(0.85, 0.50, 0.38), 2.0)
 
 	for c in items.keys():
 		var t: int = items[c]
 		var base := _rect(c, 0.0).position + Vector2(0, 18)
 		if t == Item.FOOD:
-			draw_rect(_rect(c, 7.0), Color(0.95, 0.95, 0.95))
+			draw_rect(_rect(c, 7.0), NAVY)
 		elif t == Item.BIG:
-			draw_rect(_rect(c, 3.0), Color(0.95, 0.95, 0.95))
-			_text("2", base, 18, DARK, HORIZONTAL_ALIGNMENT_CENTER, CELL)
+			draw_rect(_rect(c, 3.0), NAVY)
+			_text("2", base, 18, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, CELL)
 		elif t == Item.SLOW:
-			draw_rect(_rect(c, 3.0), Color(0.40, 0.40, 0.46))
+			draw_rect(_rect(c, 3.0), Color(0.45, 0.45, 0.52))
 			_text("-", base, 20, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, CELL)
 		elif t == Item.FAST:
-			draw_rect(_rect(c, 3.0), Color(0.78, 0.82, 0.90))
-			_text("+", base, 20, DARK, HORIZONTAL_ALIGNMENT_CENTER, CELL)
+			draw_rect(_rect(c, 3.0), Color(0.97, 0.97, 1.0))
+			draw_rect(_rect(c, 3.0), NAVY, false, 2.0)
+			_text("+", base, 20, NAVY, HORIZONTAL_ALIGNMENT_CENTER, CELL)
 
 	if Session.slots.size() == 4:
 		for i in snakes.size():
-			var s: Dictionary = snakes[i]
-			if not s["alive"]:
-				continue
-			var body: Array = s["body"]
-			var col := _pcolor(i)
-			for j in body.size():
-				draw_rect(_rect(body[j], 1.0), col.lightened(0.45) if j == 0 else col)
-			var head: Vector2i = body[0]
-			var mark := _rect(head, 7.0)
-			if (i >> 1) == 0:
-				draw_rect(mark, DARK)
-			else:
-				draw_rect(mark, DARK, false, 2.0)
-			var hp := ORIGIN + Vector2(head) * CELL
-			_text(str(Session.slots[i]["name"]), hp + Vector2(-40, -3), 13, Color(1, 1, 1, 0.85),
-				HORIZONTAL_ALIGNMENT_CENTER, CELL + 80.0)
-			if i == local_slot and (countdown > 0.0 or GAME_TIME - time_left < 4.0):
-				draw_rect(_rect(head, -3.0), Color.WHITE, false, 2.0)
+			if snakes[i]["alive"]:
+				_draw_snake(i)
 		_draw_hud()
 
 	if countdown > 0.0 and state == State.PLAYING:
 		draw_rect(Rect2(Vector2.ZERO, SCREEN), Color(0, 0, 0, 0.45))
 		_text(str(int(ceil(countdown))), Vector2(0, 400), 160, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x)
 		_text("¡Prepárate!", Vector2(0, 250), 44, Color(1.0, 0.85, 0.2), HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x)
-		_text("Mueve tu serpiente (marcada con un cuadro blanco) con flechas/WASD o deslizando el dedo",
+		_text("Tu serpiente está marcada con un círculo. Muévela con flechas/WASD o deslizando el dedo",
 			Vector2(0, 470), 22, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x)
+		_text("Si mueres pierdes los puntos que llevabas",
+			Vector2(0, 505), 22, Color(1.0, 0.85, 0.2), HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x)
 	elif state == State.ENDED:
 		_draw_end()
 
 
 func _draw_hud() -> void:
 	_team_icon(Vector2(40, 12), 0)
-	_text("EQUIPO 1: %d" % _team_score(0), Vector2(72, 36), 28, Color.WHITE)
+	_text("EQUIPO 1: %d" % _team_score(0), Vector2(72, 36), 28, NAVY)
 	_team_icon(Vector2(1216, 12), 1)
-	_text("EQUIPO 2: %d" % _team_score(1), Vector2(0, 36), 28, Color.WHITE, HORIZONTAL_ALIGNMENT_RIGHT, 1208.0)
+	_text("EQUIPO 2: %d" % _team_score(1), Vector2(0, 36), 28, NAVY, HORIZONTAL_ALIGNMENT_RIGHT, 1208.0)
 	var secs := int(ceil(time_left))
-	_text("%d:%02d" % [secs / 60, secs % 60], Vector2(0, 36), 32, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x)
+	_text("%d:%02d" % [secs / 60, secs % 60], Vector2(0, 36), 32, NAVY, HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x)
 	var elapsed := GAME_TIME - time_left
 	var phase := "Fase 1: puntos +1"
 	if elapsed >= PHASE3_AT:
 		phase = "Fase 3: paredes y velocidad"
 	elif elapsed >= PHASE2_AT:
 		phase = "Fase 2: puntos +2 (1/5)"
-	_text(phase, Vector2(0, 58), 16, Color(0.7, 0.75, 0.8), HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x)
+	_text(phase, Vector2(0, 58), 16, Color(0.25, 0.33, 0.50), HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x)
 	var xs := [40.0, 250.0, 830.0, 1040.0]
 	for i in snakes.size():
 		var s: Dictionary = snakes[i]
@@ -566,7 +626,7 @@ func _draw_hud() -> void:
 			txt += " [+]"
 		elif s["mult"] < 1.0:
 			txt += " [-]"
-		_text(txt, Vector2(xs[i], 58), 16, _pcolor(i))
+		_text_o(txt, Vector2(xs[i], 58), 16, _pcolor(i), NAVY)
 
 
 func _draw_end() -> void:
