@@ -3,9 +3,10 @@ extends Control
 
 const GameScript := preload("res://game.gd")
 const MenuBg := preload("res://menu_bg.gd")
+const GoogleAuth := preload("res://google_auth.gd")
 
 const GAME_TITLE := "Multi-Snake"
-const VERSION := "v0.4"
+const VERSION := "v0.5"
 const NAVY := Color(0.10, 0.16, 0.30)
 const GRAY := Color(0.78, 0.84, 0.92)
 const RED := Color(1.0, 0.55, 0.55)
@@ -17,6 +18,7 @@ const C_RED := Color(0.88, 0.32, 0.38)
 const C_SLATE := Color(0.40, 0.47, 0.62)
 
 var bg3d = null
+var auth = null
 var ui: Control
 var game: Node2D = null
 var screen := ""
@@ -35,9 +37,9 @@ func _ready() -> void:
 	Session.lobby_changed.connect(_on_lobby_changed)
 	Session.match_started.connect(_on_match_started)
 	Session.connection_lost.connect(_on_connection_lost)
-	_show_menu()
-	if Session.player_name == "":
-		_show_profile(true)
+	auth = GoogleAuth.new()
+	add_child(auth)
+	_show_login()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -216,7 +218,7 @@ func _pill_label(text: String, size: int, bg: Color) -> PanelContainer:
 
 func _avatar_rect(i: int, size: float) -> TextureRect:
 	var t := TextureRect.new()
-	t.texture = Session.avatar_texture(i)
+	t.texture = Session.avatar_texture(i, mini(int(size * 2.0), 256))
 	t.custom_minimum_size = Vector2(size, size)
 	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -264,13 +266,8 @@ func _color_grid(selected: int, taken: Array, cb: Callable) -> GridContainer:
 	return g
 
 
-# ================================================================ menu principal
-func _show_menu() -> void:
-	screen = "menu"
-	Session.leave()
-	var vb := _screen(false)
-	vb.add_theme_constant_override("separation", 16)
-
+# ================================================================ login
+func _add_title(vb: VBoxContainer) -> void:
 	var title := _label(GAME_TITLE, 124, Color.WHITE)
 	title.add_theme_color_override("font_outline_color", NAVY)
 	title.add_theme_constant_override("outline_size", 20)
@@ -278,6 +275,133 @@ func _show_menu() -> void:
 	title.add_theme_constant_override("shadow_offset_y", 8)
 	vb.add_child(title)
 	vb.add_child(_pill_label("Snake  2 vs 2", 28, Color(0.10, 0.16, 0.30, 0.80)))
+
+
+func _google_button(text: String, cb: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = Vector2(500, 84)
+	b.pressed.connect(cb)
+	var tex = null
+	if ResourceLoader.exists("res://ui/google_g.png"):
+		tex = load("res://ui/google_g.png")
+	if tex != null:
+		b.icon = tex
+		b.add_theme_constant_override("h_separation", 18)
+	b.add_theme_stylebox_override("normal", _pill(Color(1, 1, 1), 34, false))
+	b.add_theme_stylebox_override("hover", _pill(Color(0.93, 0.96, 1.0), 34, false))
+	b.add_theme_stylebox_override("pressed", _pill(Color(0.86, 0.91, 0.98), 34, true))
+	for n in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		b.add_theme_color_override(n, NAVY)
+	return b
+
+
+func _show_login() -> void:
+	screen = "login"
+	Session.leave()
+	if auth != null:
+		auth.cancel()
+	var vb := _screen(false)
+	vb.add_theme_constant_override("separation", 14)
+	_add_title(vb)
+	vb.add_child(_spacer(10))
+	if notice != "":
+		vb.add_child(_pill_label(notice, 22, Color(0.78, 0.22, 0.30, 0.92)))
+		notice = ""
+	if not Session.last_account.is_empty():
+		var who := str(Session.last_account.get("name", ""))
+		var cont := _button("CONTINUAR COMO %s" % who.to_upper(), func(): _continue_last(), Vector2(500, 84), C_GREEN)
+		cont.add_theme_font_size_override("font_size", 24)
+		vb.add_child(cont)
+	vb.add_child(_google_button("ENTRAR CON GOOGLE", func(): _start_google_login()))
+	vb.add_child(_button("JUGAR COMO INVITADO", func(): _login_guest(), Vector2(500, 60), C_SLATE))
+
+
+func _continue_last() -> void:
+	Session.continue_last()
+	_after_login()
+
+
+func _login_guest() -> void:
+	Session.login_guest()
+	_after_login()
+
+
+func _after_login() -> void:
+	_show_menu()
+	if Session.player_name == "":
+		_show_profile(true)
+
+
+func _logout() -> void:
+	Session.logout()
+	_show_login()
+
+
+func _account_text() -> String:
+	if bool(Session.account.get("guest", true)):
+		return "Jugando como invitado"
+	return "Cuenta de Google: %s" % str(Session.account.get("email", ""))
+
+
+func _start_google_login() -> void:
+	if not auth.load_config():
+		notice = "Falta configurar google_oauth.cfg (mira el README)"
+		_show_login()
+		return
+	screen = "google"
+	var vb := _screen()
+	vb.add_child(_label("Conectando con Google...", 40, Color.WHITE))
+	vb.add_child(_button("CANCELAR", func(): _cancel_google(), Vector2(420, 60), C_SLATE))
+	var info: Dictionary = await auth.request_device_code()
+	if screen != "google" or int(info.get("_flow", -1)) != auth.flow:
+		return   # cancelado mientras esperaba
+	if info.has("error"):
+		notice = str(info["error"])
+		_show_login()
+		return
+	_show_google_code(info)
+	var user: Dictionary = await auth.poll_for_token(info)
+	if user.has("cancelled") or screen != "google":
+		return
+	if user.has("error"):
+		notice = str(user["error"])
+		_show_login()
+		return
+	Session.login_google(user)
+	_after_login()
+
+
+func _show_google_code(info: Dictionary) -> void:
+	var url := str(info.get("verification_url", "https://www.google.com/device"))
+	var code := str(info.get("user_code", ""))
+	var vb := _screen()
+	vb.add_child(_label("Inicia sesión con Google", 42, Color.WHITE))
+	vb.add_child(_note("1. Abre  %s  en un navegador (puede ser el de tu móvil)\n2. Introduce este código y acepta:" % url, 22, GRAY, 600))
+	vb.add_child(_pill_label(code, 72, Color(0.20, 0.30, 0.65, 1.0)))
+	vb.add_child(_label("Esperando a que confirmes en Google...", 20, GOLD))
+	vb.add_child(_button("ABRIR GOOGLE Y COPIAR CÓDIGO", func(): _open_google(url, code), Vector2(520, 64), C_BLUE))
+	vb.add_child(_button("CANCELAR", func(): _cancel_google(), Vector2(520, 58), C_SLATE))
+
+
+func _open_google(url: String, code: String) -> void:
+	DisplayServer.clipboard_set(code)
+	OS.shell_open(url)
+
+
+func _cancel_google() -> void:
+	auth.cancel()
+	_show_login()
+
+
+# ================================================================ menu principal
+func _show_menu() -> void:
+	screen = "menu"
+	Session.leave()
+	var vb := _screen(false)
+	vb.add_theme_constant_override("separation", 16)
+
+	_add_title(vb)
 	vb.add_child(_spacer(14))
 	if notice != "":
 		vb.add_child(_pill_label(notice, 22, Color(0.78, 0.22, 0.30, 0.92)))
@@ -368,22 +492,45 @@ func _show_profile(forced: bool) -> void:
 	panel.add_child(vb)
 
 	vb.add_child(_label("¡BIENVENIDO A %s!" % GAME_TITLE.to_upper() if forced else "TU PERFIL", 38, Color.WHITE))
-	var preview := _avatar_rect(tmp_avatar, 120)
-	preview.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	vb.add_child(preview)
-	vb.add_child(_label("Elige tu imagen", 22, GRAY))
+	vb.add_child(_label(_account_text(), 18, GRAY))
 
+	var body := HBoxContainer.new()
+	body.add_theme_constant_override("separation", 40)
+	vb.add_child(body)
+
+	var left := VBoxContainer.new()
+	left.add_theme_constant_override("separation", 10)
+	left.custom_minimum_size = Vector2(330, 0)
+	body.add_child(left)
+	var preview := _avatar_rect(tmp_avatar, 130)
+	preview.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	left.add_child(preview)
+	left.add_child(_label("Tu nombre", 22, GRAY))
+	var edit := LineEdit.new()
+	edit.text = Session.player_name
+	edit.placeholder_text = "Escribe tu nombre"
+	edit.max_length = Session.NAME_MAX
+	edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	edit.custom_minimum_size = Vector2(330, 62)
+	edit.add_theme_font_size_override("font_size", 28)
+	left.add_child(edit)
+	var err := _label("", 20, RED)
+	left.add_child(err)
+
+	var right := VBoxContainer.new()
+	right.add_theme_constant_override("separation", 10)
+	body.add_child(right)
+	right.add_child(_label("Elige tu imagen", 22, GRAY))
 	var grid := GridContainer.new()
 	grid.columns = 5
-	grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	grid.add_theme_constant_override("h_separation", 12)
 	grid.add_theme_constant_override("v_separation", 12)
-	vb.add_child(grid)
+	right.add_child(grid)
 	var btns: Array = []
 	for i in Session.AVATAR_COUNT:
 		var b := Button.new()
-		b.custom_minimum_size = Vector2(100, 100)
-		b.icon = Session.avatar_texture(i)
+		b.custom_minimum_size = Vector2(88, 88)
+		b.icon = Session.avatar_texture(i, 160)
 		b.expand_icon = true
 		b.focus_mode = Control.FOCUS_NONE
 		b.pressed.connect(func(): _pick_avatar(i, btns, preview))
@@ -391,25 +538,14 @@ func _show_profile(forced: bool) -> void:
 		btns.append(b)
 	_refresh_avatars(btns, preview)
 
-	vb.add_child(_label("Tu nombre", 22, GRAY))
-	var edit := LineEdit.new()
-	edit.text = Session.player_name
-	edit.placeholder_text = "Escribe tu nombre"
-	edit.max_length = Session.NAME_MAX
-	edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	edit.custom_minimum_size = Vector2(420, 64)
-	edit.add_theme_font_size_override("font_size", 28)
-	vb.add_child(edit)
-	var err := _label("", 20, RED)
-	vb.add_child(err)
-
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 16)
 	vb.add_child(row)
-	row.add_child(_button("GUARDAR", func(): _save_profile(edit, err), Vector2(240, 64), C_GREEN))
+	row.add_child(_button("GUARDAR", func(): _save_profile(edit, err), Vector2(220, 60), C_GREEN))
 	if not forced:
-		row.add_child(_button("CANCELAR", func(): _close_profile(), Vector2(240, 64), C_SLATE))
+		row.add_child(_button("CANCELAR", func(): _close_profile(), Vector2(220, 60), C_SLATE))
+	row.add_child(_button("CERRAR SESIÓN", func(): _logout(), Vector2(260, 60), C_RED))
 	edit.text_submitted.connect(func(_t: String): _save_profile(edit, err))
 	if not OS.has_feature("mobile"):
 		edit.grab_focus()
@@ -428,7 +564,7 @@ func _refresh_avatars(btns: Array, preview: TextureRect) -> void:
 		b.add_theme_stylebox_override("hover", _avatar_style(sel, true))
 		b.add_theme_stylebox_override("pressed", _avatar_style(true, true))
 		b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	preview.texture = Session.avatar_texture(tmp_avatar)
+	preview.texture = Session.avatar_texture(tmp_avatar, 260)
 
 
 func _save_profile(edit: LineEdit, err: Label) -> void:

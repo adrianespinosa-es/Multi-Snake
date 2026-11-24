@@ -11,6 +11,7 @@ const PORT := 24567
 const NAME_MAX := 12
 const PROFILE_PATH := "user://profile.cfg"
 const AVATAR_COUNT := 10
+const ACCOUNT_PATH := "user://last_account.cfg"
 
 var palette: Array = [
 	Color(0.16, 0.45, 0.95), Color(0.05, 0.68, 0.62), Color(0.25, 0.75, 0.30), Color(0.98, 0.80, 0.10),
@@ -22,6 +23,8 @@ var player_name := ""
 var my_color := 0
 var last_ip := ""
 var avatar := 0
+var account: Dictionary = {}        # cuenta con la sesion iniciada
+var last_account: Dictionary = {}   # ultima cuenta de Google usada en este dispositivo
 var _avatar_cache := {}
 var online := false
 var is_host := false
@@ -35,7 +38,7 @@ var my_slot := 0
 func _ready() -> void:
 	randomize()
 	reset_slots()
-	_load_profile()
+	_load_last_account()
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_ok)
@@ -43,10 +46,24 @@ func _ready() -> void:
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
 
 
-# ---------------------------------------------------------------- perfil
+# ---------------------------------------------------------------- cuenta y perfil
+func _profile_path() -> String:
+	if account.is_empty() or bool(account.get("guest", true)):
+		return "user://profile.cfg"
+	return "user://profile_%s.cfg" % str(account["id"]).validate_filename()
+
+
+func _reset_profile() -> void:
+	player_name = ""
+	my_color = 0
+	last_ip = ""
+	avatar = 0
+
+
 func _load_profile() -> void:
+	_reset_profile()
 	var cf := ConfigFile.new()
-	if cf.load(PROFILE_PATH) == OK:
+	if cf.load(_profile_path()) == OK:
 		player_name = str(cf.get_value("profile", "name", ""))
 		my_color = int(cf.get_value("profile", "color", 0)) % palette.size()
 		last_ip = str(cf.get_value("profile", "ip", ""))
@@ -59,7 +76,53 @@ func save_profile() -> void:
 	cf.set_value("profile", "color", my_color)
 	cf.set_value("profile", "ip", last_ip)
 	cf.set_value("profile", "avatar", avatar)
-	cf.save(PROFILE_PATH)
+	cf.save(_profile_path())
+
+
+func _load_last_account() -> void:
+	var cf := ConfigFile.new()
+	if cf.load(ACCOUNT_PATH) == OK:
+		var id := str(cf.get_value("account", "id", ""))
+		if id != "":
+			last_account = {"id": id, "name": str(cf.get_value("account", "name", "")),
+				"email": str(cf.get_value("account", "email", "")), "guest": false}
+
+
+func _save_last_account() -> void:
+	var cf := ConfigFile.new()
+	cf.set_value("account", "id", last_account["id"])
+	cf.set_value("account", "name", last_account["name"])
+	cf.set_value("account", "email", last_account["email"])
+	cf.save(ACCOUNT_PATH)
+
+
+func login_guest() -> void:
+	account = {"id": "guest", "name": "Invitado", "email": "", "guest": true}
+	_load_profile()
+
+
+## `user` = respuesta de Google (sub, name, given_name, email...)
+func login_google(user: Dictionary) -> void:
+	account = {"id": str(user.get("sub", "")), "name": str(user.get("name", "")),
+		"email": str(user.get("email", "")), "guest": false}
+	_load_profile()
+	if player_name == "":
+		player_name = str(user.get("given_name", user.get("name", ""))).strip_edges().substr(0, NAME_MAX)
+		save_profile()
+	last_account = account.duplicate()
+	_save_last_account()
+
+
+func continue_last() -> void:
+	account = last_account.duplicate()
+	_load_profile()
+
+
+func logout() -> void:
+	account = {}
+	last_account = {}
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(ACCOUNT_PATH))
+	_reset_profile()
 
 
 # ---------------------------------------------------------------- huecos y colores
@@ -120,12 +183,25 @@ func _fill_ai() -> void:
 			n += 1
 
 
-func avatar_texture(i: int) -> Texture2D:
+## Imagen de perfil. `px` > 0 devuelve una copia reducida con buena calidad (evita dientes de sierra).
+func avatar_texture(i: int, px: int = 0) -> Texture2D:
 	i = clampi(i, 0, AVATAR_COUNT - 1)
-	if not _avatar_cache.has(i):
-		var path := "res://avatars/avatar_%02d.png" % (i + 1)
-		_avatar_cache[i] = load(path) if ResourceLoader.exists(path) else null
-	return _avatar_cache[i]
+	var key := "%d_%d" % [i, px]
+	if _avatar_cache.has(key):
+		return _avatar_cache[key]
+	var path := "res://avatars/avatar_%02d.png" % (i + 1)
+	var tex: Texture2D = null
+	if ResourceLoader.exists(path):
+		tex = load(path)
+		if tex != null and px > 0 and px < tex.get_width():
+			var img := tex.get_image()
+			if img != null:
+				if img.is_compressed():
+					img.decompress()
+				img.resize(px, px, Image.INTERPOLATE_LANCZOS)
+				tex = ImageTexture.create_from_image(img)
+	_avatar_cache[key] = tex
+	return tex
 
 
 func local_ips() -> Array:

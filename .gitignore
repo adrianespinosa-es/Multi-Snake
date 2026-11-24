@@ -6,3 +6,5 @@ export_presets.cfg
 *.exe
 *.pck
 builds/
+
+google_oauth.cfg

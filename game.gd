@@ -54,9 +54,22 @@ var spawn_wall_t := 0.0
 var net_acc := 0.0
 var finished_emitted := false
 var touch_start := {}
+var item_tex := {}
+var tex_brick: Texture2D = null
+
+
+func _load_tex(path: String) -> Texture2D:
+	if ResourceLoader.exists(path):
+		return load(path)
+	return null
 
 
 func _ready() -> void:
+	item_tex[Item.FOOD] = _load_tex("res://items/apple.png")          # manzana roja: +1
+	item_tex[Item.BIG] = _load_tex("res://items/watermelon.png")      # sandia: +2
+	item_tex[Item.SLOW] = _load_tex("res://items/slow.png")           # - rojo: velocidad -1/4
+	item_tex[Item.FAST] = _load_tex("res://items/fast.png")           # + verde: velocidad +1/4
+	tex_brick = _load_tex("res://items/brick.png")                    # ladrillo: muro
 	authoritative = (not Session.online) or Session.is_host
 	local_slot = Session.my_slot
 	if authoritative:
@@ -479,6 +492,40 @@ func _text(txt: String, pos: Vector2, size: int, col: Color,
 	draw_string(ThemeDB.fallback_font, pos, txt, align, width, size, col)
 
 
+## Icono del jugador rodeado por el color de su serpiente.
+func _draw_avatar(center: Vector2, slot: int, r: float, dim: bool = false) -> void:
+	var col := _pcolor(slot)
+	draw_circle(center, r + 5.0, NAVY)
+	draw_circle(center, r + 3.5, col)
+	var tex := Session.avatar_texture(int(Session.slots[slot]["avatar"]), int(r * 4.0))
+	if tex != null:
+		draw_texture_rect(tex, Rect2(center - Vector2(r, r), Vector2(r * 2.0, r * 2.0)), false,
+			Color(1, 1, 1, 0.45 if dim else 1.0))
+	else:
+		draw_circle(center, r, Color.WHITE)
+
+
+func _draw_legend(y: float) -> void:
+	var entries: Array = [
+		[item_tex.get(Item.FOOD), "+1 punto"],
+		[item_tex.get(Item.BIG), "+2 puntos"],
+		[tex_brick, "Muro: te elimina"],
+		[item_tex.get(Item.SLOW), "Velocidad -1/4"],
+		[item_tex.get(Item.FAST), "Velocidad +1/4"],
+	]
+	var widths := [150.0, 160.0, 230.0, 215.0, 215.0]
+	var total := 0.0
+	for w in widths:
+		total += w
+	var x := 640.0 - total / 2.0
+	for k in entries.size():
+		var tex: Texture2D = entries[k][0]
+		if tex != null:
+			draw_texture_rect(tex, Rect2(Vector2(x, y - 30.0), Vector2(36, 36)), false)
+		_text(str(entries[k][1]), Vector2(x + 44.0, y), 18, Color.WHITE)
+		x += widths[k]
+
+
 func _team_icon(pos: Vector2, team: int) -> void:
 	draw_rect(Rect2(pos, Vector2(24, 24)), Color(0.97, 0.98, 1.0))
 	draw_rect(Rect2(pos, Vector2(24, 24)), NAVY, false, 2.0)
@@ -548,6 +595,20 @@ func _draw_snake(i: int) -> void:
 		draw_arc(hc, r + 6.0, 0.0, TAU, 32, NAVY, 3.0)
 
 
+func _draw_item_fallback(c: Vector2i, t: int) -> void:
+	var base := _rect(c, 0.0).position + Vector2(0, 18)
+	if t == Item.FOOD:
+		draw_rect(_rect(c, 7.0), Color(0.85, 0.15, 0.15))
+	elif t == Item.BIG:
+		draw_rect(_rect(c, 3.0), Color(0.25, 0.65, 0.30))
+	elif t == Item.SLOW:
+		draw_rect(_rect(c, 3.0), Color(0.85, 0.15, 0.20))
+		_text("-", base, 20, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, CELL)
+	elif t == Item.FAST:
+		draw_rect(_rect(c, 3.0), Color(0.20, 0.70, 0.35))
+		_text("+", base, 20, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, CELL)
+
+
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, SCREEN), BG_COLOR)
 	var arena := Rect2(ORIGIN, Vector2(COLS * CELL, ROWS * CELL))
@@ -561,26 +622,21 @@ func _draw() -> void:
 	draw_rect(arena, BORDER_COLOR, false, 4.0)
 
 	for c in walls.keys():
-		var r := _rect(c, 1.0)
-		draw_rect(r, Color(0.30, 0.16, 0.14))
-		draw_line(r.position, r.end, Color(0.85, 0.50, 0.38), 2.0)
-		draw_line(Vector2(r.end.x, r.position.y), Vector2(r.position.x, r.end.y), Color(0.85, 0.50, 0.38), 2.0)
+		var r := _rect(c, 0.0)
+		if tex_brick != null:
+			draw_texture_rect(tex_brick, r, false)
+		else:
+			draw_rect(r.grow(-1.0), Color(0.30, 0.16, 0.14))
+			draw_line(r.position, r.end, Color(0.85, 0.50, 0.38), 2.0)
+			draw_line(Vector2(r.end.x, r.position.y), Vector2(r.position.x, r.end.y), Color(0.85, 0.50, 0.38), 2.0)
 
 	for c in items.keys():
 		var t: int = items[c]
-		var base := _rect(c, 0.0).position + Vector2(0, 18)
-		if t == Item.FOOD:
-			draw_rect(_rect(c, 7.0), NAVY)
-		elif t == Item.BIG:
-			draw_rect(_rect(c, 3.0), NAVY)
-			_text("2", base, 18, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, CELL)
-		elif t == Item.SLOW:
-			draw_rect(_rect(c, 3.0), Color(0.45, 0.45, 0.52))
-			_text("-", base, 20, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, CELL)
-		elif t == Item.FAST:
-			draw_rect(_rect(c, 3.0), Color(0.97, 0.97, 1.0))
-			draw_rect(_rect(c, 3.0), NAVY, false, 2.0)
-			_text("+", base, 20, NAVY, HORIZONTAL_ALIGNMENT_CENTER, CELL)
+		var tex: Texture2D = item_tex.get(t)
+		if tex != null:
+			draw_texture_rect(tex, _rect(c, 1.0), false)
+		else:
+			_draw_item_fallback(c, t)
 
 	if Session.slots.size() == 4:
 		for i in snakes.size():
@@ -596,6 +652,7 @@ func _draw() -> void:
 			Vector2(0, 470), 22, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x)
 		_text("Si mueres pierdes los puntos que llevabas",
 			Vector2(0, 505), 22, Color(1.0, 0.85, 0.2), HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x)
+		_draw_legend(580.0)
 	elif state == State.ENDED:
 		_draw_end()
 
@@ -610,23 +667,24 @@ func _draw_hud() -> void:
 	var elapsed := GAME_TIME - time_left
 	var phase := "Fase 1: puntos +1"
 	if elapsed >= PHASE3_AT:
-		phase = "Fase 3: paredes y velocidad"
+		phase = "Fase 3: muros y velocidad"
 	elif elapsed >= PHASE2_AT:
-		phase = "Fase 2: puntos +2 (1/5)"
-	_text(phase, Vector2(0, 58), 16, Color(0.25, 0.33, 0.50), HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x)
-	var xs := [40.0, 250.0, 830.0, 1040.0]
+		phase = "Fase 2: sandías +2 (1/5)"
+	_text(phase, Vector2(0, 62), 14, Color(0.25, 0.33, 0.50), HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x)
+	var xs := [40.0, 290.0, 740.0, 990.0]
 	for i in snakes.size():
 		var s: Dictionary = snakes[i]
 		var txt := "%s: %d" % [Session.slots[i]["name"], s["score"]]
 		if i == local_slot:
 			txt += " (tú)"
 		if not s["alive"]:
-			txt += "  reaparece en %d" % int(ceil(s["respawn_t"]))
+			txt += "  (%ds)" % int(ceil(s["respawn_t"]))
 		elif s["mult"] > 1.0:
 			txt += " [+]"
 		elif s["mult"] < 1.0:
 			txt += " [-]"
-		_text_o(txt, Vector2(xs[i], 58), 16, _pcolor(i), NAVY)
+		_draw_avatar(Vector2(xs[i] + 17.0, 55.0), i, 12.0, not s["alive"])
+		_text_o(txt, Vector2(xs[i] + 42.0, 61), 16, _pcolor(i), NAVY)
 
 
 func _draw_end() -> void:
@@ -647,6 +705,10 @@ func _draw_end() -> void:
 	_text("FIN DE LA PARTIDA", Vector2(0, 160), 36, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x)
 	_text(title, Vector2(0, 250), 72, col, HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x)
 	_text("EQUIPO 1   %d  -  %d   EQUIPO 2" % [a, b], Vector2(0, 320), 36, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x)
+	var font := ThemeDB.fallback_font
 	for i in snakes.size():
-		_text("Equipo %d  -  %s: %d" % [(i >> 1) + 1, Session.slots[i]["name"], snakes[i]["score"]],
-			Vector2(0, 385 + i * 34), 24, _pcolor(i), HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x)
+		var line := "Equipo %d  -  %s: %d" % [(i >> 1) + 1, Session.slots[i]["name"], snakes[i]["score"]]
+		var y := 395.0 + i * 46.0
+		var w := font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, 24).x
+		_draw_avatar(Vector2(640.0 - w / 2.0 - 34.0, y - 8.0), i, 16.0)
+		_text(line, Vector2(0, y), 24, _pcolor(i), HORIZONTAL_ALIGNMENT_CENTER, SCREEN.x)

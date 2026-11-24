@@ -3,6 +3,8 @@
 Snake 2 vs 2 para 4 jugadores (PC y móvil). Godot 4.3+ (GDScript).
 
 ## Flujo
+0. **Login** (primera pantalla, mismo fondo 3D): *Entrar con Google*, *Continuar como …* (si ya entraste antes)
+   o *Jugar como invitado*. Cada cuenta guarda su propio perfil (nombre, imagen, color).
 1. **Menú principal** con el nombre del juego (Multi-Snake), fondo 3D con serpientes y botones redondeados:
    Jugar online / Jugar offline (vs IA) / Salir.
 2. **Perfil** (arriba a la derecha): icono + nombre. Al pulsarlo se cambia el nombre y la imagen entre 10
@@ -33,7 +35,9 @@ Snake 2 vs 2 para 4 jugadores (PC y móvil). Godot 4.3+ (GDScript).
 - El anfitrión ejecuta la partida; si un jugador se desconecta, su serpiente pasa a la IA.
 
 ## Archivos
-- `session.gd` (autoload): perfil, sala, colores únicos y red.
+- `session.gd` (autoload): cuenta, perfil, sala, colores únicos y red.
+- `google_auth.gd`: login con Google (OAuth device flow).
+- `items/*.png`: manzana, sandía, ladrillo, velocidad -/+ (sustituibles por las tuyas, 48x48 PNG).
 - `main.gd`: menú, perfil, offline, online y sala (tema redondeado).
 - `menu_bg.gd`: fondo 3D animado del menú (serpientes, cubos flotantes).
 - `avatars/avatar_01..10.png`: imágenes de perfil (puedes sustituirlas por las tuyas, 256x256 PNG).
@@ -43,3 +47,22 @@ Snake 2 vs 2 para 4 jugadores (PC y móvil). Godot 4.3+ (GDScript).
     git log --oneline
     git checkout v0.1 -- .
     git add -A && git commit -m "mensaje"
+
+## Elementos de la partida
+- Manzana roja: +1 punto. Sandía: +2 puntos (1/5 a partir del minuto 1:00).
+- Ladrillo: muro, te elimina (a partir del 1:30).
+- Icono con "-" rojo: velocidad -1/4. Icono con "+" verde: velocidad +1/4 (durante 6 s).
+- Junto al nombre de cada jugador/IA (marcador) aparece su imagen de perfil rodeada por el color de su serpiente.
+
+## Configurar el login con Google
+El login usa el flujo OAuth "device" de Google: el juego muestra un código, el jugador abre
+google.com/device (en el PC o en su móvil), lo escribe y acepta. Sirve igual en PC y móvil, sin plugins.
+1. En https://console.cloud.google.com crea un proyecto.
+2. *APIs y servicios > Pantalla de consentimiento de OAuth*: tipo Externo, añade tu correo como usuario de prueba.
+3. *Credenciales > Crear credenciales > ID de cliente de OAuth* y elige el tipo **"TVs y dispositivos de entrada limitada"**.
+4. Copia `google_oauth.example.cfg` como `google_oauth.cfg` y pega el Client ID y el Client secret.
+   (`google_oauth.cfg` está en `.gitignore`: no se sube a GitHub.)
+5. Para builds exportadas: en *Exportar > Recursos > Filtros para exportar archivos no recursos* añade `*.cfg`.
+
+Sin ese archivo el botón de Google avisa de que falta configurarlo; el modo invitado funciona siempre.
+Nota: el login solo identifica el perfil en este dispositivo (no hay servidor propio).
